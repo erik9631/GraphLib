@@ -6,9 +6,9 @@ use crate::graph::TraverseResult::Continue;
 #[test]
 pub fn graph_disconnect_bench(){
     // prepare data
-    let data_size = 20000;
-    let mut graph = graph::Graph::with_reserve(data_size);
-    let root = graph.create_leaf(0);
+    let data_size = 200000;
+    let mut graph = graph::Graph::new();
+    let root = graph.create(0, data_size);
     let mut handles = Vec::with_capacity(data_size);
     for i in 0..data_size {
         handles.push(graph.create_and_connect_leaf(root.edge_handle, i+1));
