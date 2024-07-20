@@ -1,3 +1,5 @@
+use crate::graph::{EdgeHandle, Handle, Header, MSize, VertexHandle};
+
 pub fn split_to_parts<T>(input: &[T], number_of_parts: usize) -> Vec<&[T]>{
     let (quot, rem) = (input.len() / number_of_parts, input.len() % number_of_parts);
 
@@ -66,4 +68,16 @@ pub fn extract_from_slice_mut<T>(slice: &mut [T], start: usize, size: usize) -> 
         let end_part = std::slice::from_raw_parts_mut(data_end_ptr, end_part_size);
         return (first_part, mid_part, end_part);
     }
+}
+
+
+#[cfg_attr(release, inline(always))]
+pub fn vertex_handle(edges: &Vec<MSize>, edge_handle: EdgeHandle) -> VertexHandle {
+    let (header, _) = Header::parse_ptr(edges, edge_handle);
+    return unsafe{(*header).v_index};
+}
+
+#[cfg_attr(release, inline(always))]
+pub fn handle_from_edge_handle(edges: &Vec<MSize>, edge_handle: EdgeHandle) -> Handle {
+    return Handle::new(edge_handle.0, vertex_handle(edges, edge_handle).0);
 }

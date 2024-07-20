@@ -1,8 +1,9 @@
 use std::cmp::min;
+use std::collections::HashMap;
 use std::mem::size_of;
 use std::time::{Instant};
 use crate::{graph};
-use crate::graph::{Graph, header_size_in_msize_units, MSize};
+use crate::graph::{Graph, header_size_in_msize_units, MSize, TraverseResult};
 use crate::traits::Transform;
 
 #[test]
@@ -27,55 +28,58 @@ pub fn graph_basic_test(){
     let b = graph.create_leaf("b");
     graph.create_leaf("c");
 
-    graph.create_and_connect_leaf(a, "a_a");
-    graph.create_and_connect_leaf(a, "a_b");
-    graph.create_and_connect_leaf(a, "a_c");
+    graph.create_and_connect_leaf(a.edge_handle, "a_a");
+    graph.create_and_connect_leaf(a.edge_handle, "a_b");
+    graph.create_and_connect_leaf(a.edge_handle, "a_c");
 
-    let b_a = graph.create_and_connect_leaf(b, "b_a");
-    graph.create_and_connect_leaf(b, "b_b");
+    let b_a = graph.create_and_connect_leaf(b.edge_handle, "b_a");
+    graph.create_and_connect_leaf(b.edge_handle, "b_b");
 
-   graph.create_and_connect_leaf(b_a, "b_a_a");
+   graph.create_and_connect_leaf(b_a.edge_handle, "b_a_a");
 
-    let a_edges_result = graph.edges.edges(a);
+    let a_edges_result = graph.edges.edges(a.edge_handle);
     assert_eq!(a_edges_result.is_err(), false);
 
     let a_edges = a_edges_result.ok().unwrap();
     assert_eq!(a_edges.len(), 3);
 
+    let mut snap1 = HashMap::from([
+        ("a_a".to_string(), 1),
+        ("a_b".to_string(), 2),
+        ("a_c".to_string(), 3),
+    ]);
+
     for edge in a_edges {
-        match *edge{
-            0 => assert_eq!(graph.vertices[*edge], "a_a"),
-            1 => assert_eq!(graph.vertices[*edge], "a_b"),
-            2 => assert_eq!(graph.vertices[*edge], "a_c"),
-            _ => continue,
-        }
+        let key = graph.vertices[graph.edges.vertex_handle(*edge)];
+        assert!(snap1.contains_key(key));
+        snap1.remove(key);
     }
 
-    let b_edges_result = graph.edges.edges(b);
+    let b_edges_result = graph.edges.edges(b.edge_handle);
     assert_eq!(b_edges_result.is_err(), false);
 
     let b_edges = b_edges_result.ok().unwrap();
     assert_eq!(b_edges.len(), 2);
 
+    let mut snap2 = HashMap::from([
+        ("b_a".to_string(), 1),
+        ("b_b".to_string(), 2),
+    ]);
+
     for edge in b_edges {
-        match *edge{
-            0 => assert_eq!(graph.vertices[*edge], "b_a"),
-            1 => assert_eq!(graph.vertices[*edge], "b_b"),
-            _ => continue,
-        }
+        let key = graph.vertices[graph.edges.vertex_handle(*edge)];
+        assert!(snap2.contains_key(key));
+        snap2.remove(key);
     }
 
-    let b_a_a_edges_result = graph.edges.edges(b_a);
+    let b_a_a_edges_result = graph.edges.edges(b_a.edge_handle);
     assert_eq!(b_a_a_edges_result.is_err(), false);
 
     let b_a_a_edges = b_a_a_edges_result.ok().unwrap();
     assert_eq!(b_a_a_edges.len(), 1);
 
     for edge in b_a_a_edges {
-        match *edge{
-            0 => assert_eq!(graph.vertices[*edge], "b_a_a"),
-            _ => continue,
-        }
+        assert_eq!(graph.vertices[graph.edges.vertex_handle(*edge)], "b_a_a");
     }
 
 }
@@ -114,7 +118,7 @@ pub fn graph_edge_overflow_test(){
     let a = graph.create_leaf(0);
 
     for i in 0..count {
-        graph.create_and_connect_leaf(a, i+1);
+        graph.create_and_connect_leaf(a.edge_handle, i+1);
     }
 }
 
@@ -126,32 +130,27 @@ pub fn graph_mutability_test(){
     graph.create_leaf("b");
     graph.create_leaf("c");
 
-    graph.create_and_connect_leaf(a, "a_a");
-    graph.create_and_connect_leaf(a, "a_b");
-    graph.create_and_connect_leaf(a, "a_c");
+    graph.create_and_connect_leaf(a.edge_handle, "a_a");
+    graph.create_and_connect_leaf(a.edge_handle, "a_b");
+    graph.create_and_connect_leaf(a.edge_handle, "a_c");
 
-    let result = graph.edges.edges(a);
+    let result = graph.edges.edges(a.edge_handle);
     assert_eq!(result.is_err(), false);
 
     let edges = result.ok().unwrap();
     assert_eq!(edges.len(), 3);
 
+    let mut snap = HashMap::from([
+        ("a_a".to_string(), "a_a_edited"),
+        ("a_b".to_string(), "a_b_edited"),
+        ("a_c".to_string(), "a_c_edited"),
+    ]);
+
     for edge in edges {
-        match *edge{
-            0 => {
-                graph.vertices[*edge] = "a_a_edited";
-                graph.vertices[*edge] = "a_a_edited"
-            },
-            1 => {
-                graph.vertices[*edge] = "a_b_edited";
-                graph.vertices[*edge] = "a_b_edited"
-            },
-            2 => {
-                graph.vertices[*edge] = "a_c_edited";
-                graph.vertices[*edge] = "a_c_edited"
-            },
-            _ => continue,
-        }
+        let handle = graph.edges.vertex_handle(*edge);
+        let key = graph.vertices[handle];
+        assert!(snap.contains_key(key));
+
     }
 }
 
@@ -171,7 +170,7 @@ pub fn graph_transform_bench(){
     });
     println!("Time taken: {:?}", start.elapsed());
     for i in 0..test_size {
-        assert_eq!(graph.vertices[i], i*10);
+        assert_eq!(*graph.vertices.at(i), i*10);
     }
 
 
@@ -194,7 +193,7 @@ pub fn graph_transform_bench_async(){
     println!("Time taken: {:?}", start.elapsed());
 
     for i in 0..test_size {
-        assert_eq!(graph.vertices[i], i*10);
+        assert_eq!(*graph.vertices.at(i), i*10);
     }
 
 
@@ -206,54 +205,51 @@ pub fn graph_disconnect_test(){
     graph.create_leaf("b");
     graph.create_leaf("c");
 
-    graph.create_and_connect_leaf(a, "a_a");
-    let ab= graph.create_and_connect_leaf(a, "a_b");
-    graph.create_and_connect_leaf(a, "a_c");
-    let ad= graph.create_and_connect_leaf(a, "a_d");
-    graph.create_and_connect_leaf(a, "a_e");
-    let af= graph.create_and_connect_leaf(a, "a_f");
-    graph.edges.disconnect(a, af);
+    graph.create_and_connect_leaf(a.edge_handle, "a_a");
+    let ab= graph.create_and_connect_leaf(a.edge_handle, "a_b");
+    graph.create_and_connect_leaf(a.edge_handle, "a_c");
+    let ad= graph.create_and_connect_leaf(a.edge_handle, "a_d");
+    graph.create_and_connect_leaf(a.edge_handle, "a_e");
+    let af= graph.create_and_connect_leaf(a.edge_handle, "a_f");
+    graph.edges.disconnect(a.edge_handle, af.edge_handle);
 
 
-    assert_eq!(graph.edges.len(a), 5);
+    assert_eq!(graph.edges.len(a.edge_handle), 5);
 
-    match graph.edges.edges(a){
-        Ok(edges) => {
-            for edge in edges {
-                match *edge{
-                    3 => assert_eq!(graph.vertices[*edge], "a_a"),
-                    4 => assert_eq!(graph.vertices[*edge], "a_b"),
-                    5 => assert_eq!(graph.vertices[*edge], "a_c"),
-                    6 => assert_eq!(graph.vertices[*edge], "a_d"),
-                    7 => assert_eq!(graph.vertices[*edge], "a_e"),
-                    _ => continue,
-                }
-            }
-        },
-        Err(_) => {
-            panic!("Vertex not found!");
-        }
+    let edges = graph.edges.edges(a.edge_handle).unwrap();
+    let mut expected = HashMap::from([
+        ("a_a".to_string(), true),
+        ("a_b".to_string(), true),
+        ("a_c".to_string(), true),
+        ("a_d".to_string(), true),
+        ("a_e".to_string(), true),
+    ]);
+
+    for edge in edges {
+        let handle = graph.edges.vertex_handle(*edge);
+        let key = graph.vertices[handle].to_string();
+        assert!(expected.contains_key(&key));
+        expected.remove(&key);
     }
 
-    graph.edges.disconnect(a, ad);
-    graph.edges.disconnect(a, ab);
+    graph.edges.disconnect(a.edge_handle, ad.edge_handle);
+    graph.edges.disconnect(a.edge_handle, ab.edge_handle);
 
-    assert_eq!(graph.edges.len(a), 3);
+    assert_eq!(graph.edges.len(a.edge_handle), 3);
 
-    match graph.edges.edges(a){
-        Ok(edges) => {
-            for edge in edges {
-                match *edge{
-                    3 => assert_eq!(graph.vertices[*edge], "a_a"),
-                    5 => assert_eq!(graph.vertices[*edge], "a_c"),
-                    7 => assert_eq!(graph.vertices[*edge], "a_e"),
-                    _ => continue,
-                }
-            }
-        },
-        Err(_) => {
-            panic!("Vertex not found!");
-        }
+    let mut expected = HashMap::from([
+        ("a_a".to_string(), true),
+        ("a_c".to_string(), true),
+        ("a_e".to_string(), true),
+    ]);
+
+    let edges = graph.edges.edges(a.edge_handle).unwrap();
+
+    for edge in edges {
+        let handle = graph.edges.vertex_handle(*edge);
+        let key = graph.vertices[handle].to_string();
+        assert!(expected.contains_key(&key));
+        expected.remove(&key);
     }
 
 }
@@ -261,62 +257,72 @@ pub fn graph_disconnect_test(){
 pub fn graph_bfs_test(){
     let mut graph = Graph::new_large();
     let root = graph.create_leaf("root");
-    let a = graph.create_and_connect_leaf(root, "a");
-    let b = graph.create_and_connect_leaf(root, "b");
-    graph.create_and_connect_leaf(root, "c");
+    let a = graph.create_and_connect_leaf(root.edge_handle, "a");
+    let b = graph.create_and_connect_leaf(root.edge_handle, "b");
+    graph.create_and_connect_leaf(root.edge_handle, "c");
 
-    graph.create_and_connect_leaf(a, "a_a");
-    graph.create_and_connect_leaf(a, "a_b");
-    graph.create_and_connect_leaf(a, "a_c");
+    graph.create_and_connect_leaf(a.edge_handle, "a_a");
+    graph.create_and_connect_leaf(a.edge_handle, "a_b");
+    graph.create_and_connect_leaf(a.edge_handle, "a_c");
 
-    let b_a = graph.create_and_connect_leaf(b, "b_a");
-    graph.create_and_connect_leaf(b, "b_b");
+    let b_a = graph.create_and_connect_leaf(b.edge_handle, "b_a");
+    graph.create_and_connect_leaf(b.edge_handle, "b_b");
 
-    graph.create_and_connect_leaf(b_a, "b_a_a");
+    graph.create_and_connect_leaf(b_a.edge_handle, "b_a_a");
 
     // Instead of traverse, it should just save them to a memory and return the content to you. Faster than function calls and u can do iteration on your own.
-    let bfs_results = graph.bfs(root);
-    for (idx, vertex) in bfs_results.iter().enumerate(){
-        match idx {
-            0 => assert_eq!(graph.vertices[*vertex], "root"),
-            1 => assert_eq!(graph.vertices[*vertex], "a"),
-            2 => assert_eq!(graph.vertices[*vertex], "b"),
-            3 => assert_eq!(graph.vertices[*vertex], "c"),
-            4 => assert_eq!(graph.vertices[*vertex], "a_a"),
-            5 => assert_eq!(graph.vertices[*vertex], "a_b"),
-            6 => assert_eq!(graph.vertices[*vertex], "a_c"),
-            7 => assert_eq!(graph.vertices[*vertex], "b_a"),
-            8 => assert_eq!(graph.vertices[*vertex], "b_b"),
-            9 => assert_eq!(graph.vertices[*vertex], "b_a_a"),
-            _ => continue,
+
+    let mut expected = HashMap::from([
+        ("root".to_string(), true),
+        ("a_c".to_string(), true),
+        ("a_e".to_string(), true),
+    ]);
+
+    let mut snap = vec![
+        "b_a_a",
+        "b_b",
+        "b_a",
+        "a_c",
+        "a_b",
+        "a_a",
+        "c",
+        "b",
+        "a",
+        "root",
+    ];
+
+
+    graph.bfs(root.edge_handle, move |graph, vertex| {
+        if snap.pop().unwrap() != graph.vertices[vertex.vertex_handle]{
+            assert!(false);
         }
-    }
+
+        return TraverseResult::Continue;
+    });
 }
 
 #[test]
 pub fn graph_static_test(){
     let mut graph = Graph::new();
     let root = graph.create("root", 5);
-    let a = graph.create_and_connect(root,"a", 1);
-    assert_eq!(graph.edges.reserve(root), 5);
-    let b = graph.create_and_connect(root, "b", 0);
-    assert_eq!(graph.edges.reserve(root), 5);
-    let c = graph.create_and_connect(root,"c", 0);
-    assert_eq!(graph.edges.reserve(root), 5);
-    let d = graph.create_and_connect(root, "d", 1);
-    assert_eq!(graph.edges.reserve(root), 5);
-    let e = graph.create_and_connect(root, "e", 1);
-    assert_eq!(graph.edges.reserve(root), 5);
+    let a = graph.create_and_connect(root.edge_handle,"a", 1);
+    assert_eq!(graph.edges.reserve(root.edge_handle), 5);
+    let b = graph.create_and_connect(root.edge_handle, "b", 0);
+    assert_eq!(graph.edges.reserve(root.edge_handle), 5);
+    let c = graph.create_and_connect(root.edge_handle,"c", 0);
+    assert_eq!(graph.edges.reserve(root.edge_handle), 5);
+    let d = graph.create_and_connect(root.edge_handle, "d", 1);
+    assert_eq!(graph.edges.reserve(root.edge_handle), 5);
+    let e = graph.create_and_connect(root.edge_handle, "e", 1);
+    assert_eq!(graph.edges.reserve(root.edge_handle), 5);
 
-    graph.create_and_connect(a, "a_a", 0);
-    assert_eq!(graph.edges.reserve(root), 5);
-    graph.create_and_connect(d, "a_d", 0);
-    assert_eq!(graph.edges.reserve(root), 5);
-    graph.create_and_connect(e, "a_e", 0);
-    assert_eq!(graph.edges.reserve(root), 5);
-
-    let vertices = graph.bfs(root);
-    assert_eq!(graph.edges.reserve(root), 5);
+    graph.create_and_connect(a.edge_handle, "a_a", 0);
+    assert_eq!(graph.edges.reserve(root.edge_handle), 5);
+    graph.create_and_connect(d.edge_handle, "a_d", 0);
+    assert_eq!(graph.edges.reserve(root.edge_handle), 5);
+    graph.create_and_connect(e.edge_handle, "a_e", 0);
+    assert_eq!(graph.edges.reserve(root.edge_handle), 5);
+    assert_eq!(graph.edges.reserve(root.edge_handle), 5);
     // for vertex in graph.bfs(root){
     //     match graph.vertices[vertex]{
     //         "root" => {

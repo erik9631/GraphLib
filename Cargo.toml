@@ -9,5 +9,5 @@ build = "build.rs"
 #debug = true
 
 [profile.test]
-#inherits = "release"
+inherits = "release"
 debug = true
